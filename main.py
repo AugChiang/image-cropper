@@ -15,7 +15,7 @@ class ImageCropper:
     An interactive tool for cropping images using a fixed-size 'stamp' approach.
     Supports zooming, panning with custom scrollbars, and batch processing.
     """
-    def __init__(self, input_path, stamp_size=512, output_json="crops.json"):
+    def __init__(self, input_path, stamp_size=512, output_json="output_crops.json"):
         """
         Initialize the ImageCropper.
 
@@ -199,10 +199,9 @@ class ImageCropper:
                     if mx < vw and my < vh: 
                         crops.append({'x': int(xo), 'y': int(yo), 'w': int(cwo), 'h': int(cho)})
                     state['trigger'] = False
-                elif k == ord('z') and crops: crops.pop()
-                elif k == ord('r'): crops = []
-                elif k == ord('n') or k == 13:
-                    # Save crops on move to next
+                elif k == ord('z') and crops: crops.pop() # Undo last crop
+                elif k == ord('r'): crops = [] # Reset crops for current image
+                elif k == ord('n') or k == 13: # Save crops on move to next
                     base = os.path.splitext(os.path.basename(img_path))[0]
                     for i, c in enumerate(crops):
                         cid = f"{base}_{i:03d}"
@@ -212,16 +211,16 @@ class ImageCropper:
                     with open(self.output_json, 'w') as f: json.dump(self.all_crops, f, indent=4)
                     cv2.destroyWindow(win)
                     break
-                elif k == 27 or k == ord('q'):
-                    # Save current state and exit
+                elif k == 27 or k == ord('q'): # Save current state and exit
                     self.all_crops[img_path] = crops
                     with open(self.output_json, 'w') as f: json.dump(self.all_crops, f, indent=4)
-                    cv2.destroyAllWindows(); return
+                    cv2.destroyAllWindows()
+                    return
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Stamp-based Image Cropper")
     p.add_argument("-i", "--input", default="./input", help="Path to image or folder")
     p.add_argument("-o", "--output", default="./output_crops", help="Path to output directory")
-    p.add_argument("--size", type=int, default=512, help="Fixed stamp size")
+    p.add_argument("--size", type=int, default=512, help="Fixed stamp size (default: 512x512)")
     args = p.parse_args()
-    ImageCropper(args.input, args.size).run()
+    ImageCropper(args.input, args.size, args.output).run()
