@@ -15,29 +15,31 @@ class ImageCropper:
     An interactive tool for cropping images using a fixed-size 'stamp' approach.
     Supports zooming, panning with custom scrollbars, and batch processing.
     """
-    def __init__(self, input_path, stamp_size=512, output_json="output_crops.json"):
+    def __init__(self, input_path, stamp_size=512, output_dir="output_crops"):
         """
         Initialize the ImageCropper.
 
         Args:
             input_path (str): Path to an image file or a directory containing images.
             stamp_size (int): The fixed size (width and height) of the cropping stamp.
-            output_json (str): Filename to save the crop metadata.
+            output_dir (str): Path to the directory where crops and metadata will be saved.
         """
         self.input_path = input_path
         self.stamp_size = stamp_size
-        self.output_json = output_json
-        self.output_dir = "output_crops"
+        self.output_dir = output_dir
+        self.output_json = os.path.join(output_dir, "crops.json")
         
         if not os.path.exists(self.output_dir):
-            os.makedirs(self.output_dir)
+            os.makedirs(self.output_dir, exist_ok=True)
             
         self.image_list = self._get_image_list(input_path)
         self.all_crops = {}
         if os.path.exists(self.output_json):
             try:
-                with open(self.output_json, 'r') as f: self.all_crops = json.load(f)
-            except: pass
+                with open(self.output_json, 'r') as f:
+                    self.all_crops = json.load(f)
+            except:
+                pass
 
     def _get_image_list(self, path):
         """
@@ -212,19 +214,22 @@ class ImageCropper:
                         c['id'] = cid
                         cv2.imwrite(os.path.join(self.output_dir, f"{cid}.png"), img[c['y']:c['y']+c['h'], c['x']:c['x']+c['w']])
                     self.all_crops[img_path] = crops
-                    with open(self.output_json, 'w') as f: json.dump(self.all_crops, f, indent=4)
+                    # write to json after each image to ensure progress is saved
+                    with open(self.output_json, 'w') as f:
+                        json.dump(self.all_crops, f, indent=4)
                     cv2.destroyWindow(win)
                     break
                 elif k == 27 or k == ord('q'): # Save current state and exit
                     self.all_crops[img_path] = crops
-                    with open(self.output_json, 'w') as f: json.dump(self.all_crops, f, indent=4)
+                    with open(self.output_json, 'w') as f:
+                        json.dump(self.all_crops, f, indent=4)
                     cv2.destroyAllWindows()
                     return
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Stamp-based Image Cropper")
-    p.add_argument("-i", "--input", default="./input", help="Path to image or folder")
-    p.add_argument("-o", "--output", default="./output_crops", help="Path to output directory")
+    p.add_argument("-i", "--input", default="input", help="Path to image or folder")
+    p.add_argument("-o", "--output", default="output_crops", help="Path to output directory")
     p.add_argument("--size", type=int, default=512, help="Fixed stamp size (default: 512x512)")
     args = p.parse_args()
     ImageCropper(args.input, args.size, args.output).run()
