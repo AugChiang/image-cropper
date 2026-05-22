@@ -27,10 +27,10 @@ class ImageCropper:
         self.input_path = input_path
         self.stamp_size = stamp_size
         self.output_json = output_json
-        self.crops_dir = "crops"
+        self.output_dir = "output_crops"
         
-        if not os.path.exists(self.crops_dir):
-            os.makedirs(self.crops_dir)
+        if not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir)
             
         self.image_list = self._get_image_list(input_path)
         self.all_crops = {}
@@ -82,8 +82,6 @@ class ImageCropper:
         if not self.image_list:
             print("No images found.")
             return
-
-
 
         for img_path in self.image_list:
             img = cv2.imread(img_path)
@@ -209,7 +207,7 @@ class ImageCropper:
                     for i, c in enumerate(crops):
                         cid = f"{base}_{i:03d}"
                         c['id'] = cid
-                        cv2.imwrite(os.path.join(self.crops_dir, f"{cid}.png"), img[c['y']:c['y']+c['h'], c['x']:c['x']+c['w']])
+                        cv2.imwrite(os.path.join(self.output_dir, f"{cid}.png"), img[c['y']:c['y']+c['h'], c['x']:c['x']+c['w']])
                     self.all_crops[img_path] = crops
                     with open(self.output_json, 'w') as f: json.dump(self.all_crops, f, indent=4)
                     cv2.destroyWindow(win)
@@ -222,7 +220,8 @@ class ImageCropper:
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Stamp-based Image Cropper")
-    p.add_argument("-i", "--input", default="./test_img", help="Path to image or folder")
+    p.add_argument("-i", "--input", default="./input", help="Path to image or folder")
+    p.add_argument("-o", "--output", default="./output_crops", help="Path to output directory")
     p.add_argument("--size", type=int, default=512, help="Fixed stamp size")
     args = p.parse_args()
     ImageCropper(args.input, args.size).run()
