@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# AI
+.gemini/
+.geminiignore
+GEMINI.md
+
+# test
+test_img
+*.json
+
+.vscode/
+.env
