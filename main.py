@@ -171,9 +171,8 @@ class ImageCropper:
 
                 # Mouse interaction logic
                 mx, my = state['mouse_win']
+                over_image = False
                 if mx < vw and my < vh:
-                    cxo, cyo = (mx+ox)/zoom, (my+oy)/zoom
-                    
                     # Visualize existing crops
                     for c in crops:
                         vx, vy = int(c['x']*zoom-ox), int(c['y']*zoom-oy)
@@ -181,12 +180,17 @@ class ImageCropper:
                         cv2.rectangle(disp, (vx, vy), (vx+vw_, vy+vh_), (0, 255, 0), 1)
                         cv2.circle(disp, (vx+vw_//2, vy+vh_//2), 2, (0, 255, 0), -1)
                     
-                    # Visualize current stamp
-                    xo, yo, cwo, cho = self.get_crop(cxo, cyo, orig_w, orig_h)
-                    vx, vy, vw_, vh_ = int(xo*zoom-ox), int(yo*zoom-oy), int(cwo*zoom), int(cho*zoom)
-                    cv2.rectangle(disp, (vx, vy), (vx+vw_, vy+vh_), (0, 255, 0), 2)
-                    cv2.line(disp, (mx-15, my), (mx+15, my), (0, 255, 0), 1)
-                    cv2.line(disp, (mx, my-15), (mx, my+15), (0, 255, 0), 1)
+                    # Only process clicks/previews if mouse is over the image
+                    if mx + ox < dw and my + oy < dh:
+                        over_image = True
+                        cxo, cyo = (mx+ox)/zoom, (my+oy)/zoom
+                        xo, yo, cwo, cho = self.get_crop(cxo, cyo, orig_w, orig_h)
+                        
+                        # Visualize current stamp
+                        vx, vy, vw_, vh_ = int(xo*zoom-ox), int(yo*zoom-oy), int(cwo*zoom), int(cho*zoom)
+                        cv2.rectangle(disp, (vx, vy), (vx+vw_, vy+vh_), (0, 255, 0), 2)
+                        cv2.line(disp, (mx-15, my), (mx+15, my), (0, 255, 0), 1)
+                        cv2.line(disp, (mx, my-15), (mx, my+15), (0, 255, 0), 1)
 
                 # UI Overlay
                 txt = f"Zoom: {zoom:.2f}x | Click: Crop | Z: Undo | R: Reset | N: Next"
@@ -196,7 +200,7 @@ class ImageCropper:
                 k = cv2.waitKey(20) & 0xFF
                 
                 if k == ord(' ') or state['trigger']:
-                    if mx < vw and my < vh: 
+                    if over_image: 
                         crops.append({'x': int(xo), 'y': int(yo), 'w': int(cwo), 'h': int(cho)})
                     state['trigger'] = False
                 elif k == ord('z') and crops: crops.pop() # Undo last crop
