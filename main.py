@@ -226,10 +226,60 @@ class ImageCropper:
                     cv2.destroyAllWindows()
                     return
 
+    def paste_back(self, output_final="output"):
+        """
+        Pasts the processed crops back into their original images.
+        
+        Args:
+            output_final (str): Directory where the reconstructed images will be saved.
+        """
+        if not os.path.exists(output_final):
+            os.makedirs(output_final, exist_ok=True)
+            
+        if not self.all_crops:
+            print("No crop metadata found. Ensure crops.json exists in the output directory.")
+            return
+
+        for img_path, crops in self.all_crops.items():
+            img = cv2.imread(img_path)
+            if img is None:
+                print(f"Warning: Could not read original image {img_path}")
+                continue
+            
+            for c in crops:
+                cid = c['id']
+                crop_path = os.path.join(self.output_dir, f"{cid}.png")
+                if not os.path.exists(crop_path):
+                    print(f"Warning: Crop file {crop_path} not found.")
+                    continue
+                
+                crop_img = cv2.imread(crop_path)
+                if crop_img is None:
+                    print(f"Warning: Could not read crop image {crop_path}")
+                    continue
+                
+                x, y, w, h = c['x'], c['y'], c['w'], c['h']
+                # Ensure crop matches expected size in case of external processing
+                if crop_img.shape[1] != w or crop_img.shape[0] != h:
+                    crop_img = cv2.resize(crop_img, (w, h))
+                
+                img[y:y+h, x:x+w] = crop_img
+                
+            out_file = os.path.join(output_final, os.path.basename(img_path))
+            cv2.imwrite(out_file, img)
+            print(f"Pasted crops and saved: {out_file}")
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Stamp-based Image Cropper")
     p.add_argument("-i", "--input", default="input", help="Path to image or folder")
     p.add_argument("-o", "--output", default="output_crops", help="Path to output directory")
     p.add_argument("--size", type=int, default=512, help="Fixed stamp size (default: 512x512)")
+    p.add_argument("--paste", action="store_true", help="Paste crops back to original images")
+    p.add_argument("--output-final", default="output_final", help="Output directory for pasted images")
     args = p.parse_args()
-    ImageCropper(args.input, args.size, args.output).run()
+    
+    cropper = ImageCropper(args.input, args.size, args.output)
+    if args.paste:
+        cropper.paste_back(args.output_final)
+    else:
+        cropper.run()
