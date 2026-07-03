@@ -10,6 +10,34 @@ BAR_T = 20 # Scrollbar thickness
 INIT_W, INIT_H = 1280, 720 # Default window size
 IMG_FILE_EXTS = ['*.jpg', '*.png', '*.jpeg', '*.webp']
 
+
+def imread_unicode(path, flags=cv2.IMREAD_COLOR):
+    """Read an image from a path that may contain Unicode characters on Windows."""
+    try:
+        data = np.fromfile(os.fspath(path), dtype=np.uint8)
+    except OSError:
+        return None
+    if data.size == 0:
+        return None
+    return cv2.imdecode(data, flags)
+
+
+def imwrite_unicode(path, image, params=None):
+    """Write an image to a path that may contain Unicode characters on Windows."""
+    path = os.fspath(path)
+    extension = os.path.splitext(path)[1]
+    if not extension:
+        raise ValueError(f"Output image path has no extension: {path}")
+
+    success, encoded = cv2.imencode(extension, image, params or [])
+    if not success:
+        return False
+    try:
+        encoded.tofile(path)
+    except OSError:
+        return False
+    return True
+
 class ImageCropper:
     """
     An interactive tool for cropping images using a fixed-size 'stamp' approach.
@@ -36,7 +64,7 @@ class ImageCropper:
         self.all_crops = {}
         if os.path.exists(self.output_json):
             try:
-                with open(self.output_json, 'r') as f:
+                with open(self.output_json, 'r', encoding='utf-8') as f:
                     self.all_crops = json.load(f)
             except:
                 pass
@@ -86,7 +114,7 @@ class ImageCropper:
             return
 
         for img_path in self.image_list:
-            img = cv2.imread(img_path)
+            img = imread_unicode(img_path)
             if img is None: continue
             orig_h, orig_w = img.shape[:2]
             
@@ -212,17 +240,17 @@ class ImageCropper:
                     for i, c in enumerate(crops):
                         cid = f"{base}_{i:03d}"
                         c['id'] = cid
-                        cv2.imwrite(os.path.join(self.output_dir, f"{cid}.png"), img[c['y']:c['y']+c['h'], c['x']:c['x']+c['w']])
+                        imwrite_unicode(os.path.join(self.output_dir, f"{cid}.png"), img[c['y']:c['y']+c['h'], c['x']:c['x']+c['w']])
                     self.all_crops[img_path] = crops
                     # write to json after each image to ensure progress is saved
-                    with open(self.output_json, 'w') as f:
-                        json.dump(self.all_crops, f, indent=4)
+                    with open(self.output_json, 'w', encoding='utf-8') as f:
+                        json.dump(self.all_crops, f, indent=4, ensure_ascii=False)
                     cv2.destroyWindow(win)
                     break
                 elif k == 27 or k == ord('q'): # Save current state and exit
                     self.all_crops[img_path] = crops
-                    with open(self.output_json, 'w') as f:
-                        json.dump(self.all_crops, f, indent=4)
+                    with open(self.output_json, 'w', encoding='utf-8') as f:
+                        json.dump(self.all_crops, f, indent=4, ensure_ascii=False)
                     cv2.destroyAllWindows()
                     return
 
@@ -241,7 +269,7 @@ class ImageCropper:
             return
 
         for img_path, crops in self.all_crops.items():
-            img = cv2.imread(img_path)
+            img = imread_unicode(img_path)
             if img is None:
                 print(f"Warning: Could not read original image {img_path}")
                 continue
@@ -253,7 +281,7 @@ class ImageCropper:
                     print(f"Warning: Crop file {crop_path} not found.")
                     continue
                 
-                crop_img = cv2.imread(crop_path)
+                crop_img = imread_unicode(crop_path)
                 if crop_img is None:
                     print(f"Warning: Could not read crop image {crop_path}")
                     continue
@@ -266,7 +294,7 @@ class ImageCropper:
                 img[y:y+h, x:x+w] = crop_img
                 
             out_file = os.path.join(output_final, os.path.basename(img_path))
-            cv2.imwrite(out_file, img)
+            imwrite_unicode(out_file, img)
             print(f"Pasted crops and saved: {out_file}")
 
 if __name__ == "__main__":
