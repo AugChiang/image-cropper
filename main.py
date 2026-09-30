@@ -7,7 +7,7 @@ import numpy as np
 
 
 BAR_T = 20 # Scrollbar thickness
-INIT_W, INIT_H = 1280, 720 # Default window size
+WINDOW_MARGIN = 40 # Leave room for the window frame and desktop chrome
 IMG_FILE_EXTS = ['*.jpg', '*.png', '*.jpeg', '*.webp']
 
 
@@ -37,6 +37,34 @@ def imwrite_unicode(path, image, params=None):
     except OSError:
         return False
     return True
+
+
+def get_available_screen_size():
+    """Return the usable desktop size, with a conservative fallback for headless use."""
+    try:
+        import tkinter as tk
+
+        root = tk.Tk()
+        root.withdraw()
+        screen_w, screen_h = root.winfo_screenwidth(), root.winfo_screenheight()
+        root.destroy()
+
+        # On Windows, use the work area so the taskbar is excluded.
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+
+            class RECT(ctypes.Structure):
+                _fields_ = [("left", wintypes.LONG), ("top", wintypes.LONG),
+                            ("right", wintypes.LONG), ("bottom", wintypes.LONG)]
+
+            work_area = RECT()
+            if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work_area), 0):
+                screen_w = work_area.right - work_area.left
+                screen_h = work_area.bottom - work_area.top
+        return max(1, screen_w), max(1, screen_h)
+    except Exception:
+        return 1280, 720
 
 class ImageCropper:
     """
@@ -118,8 +146,12 @@ class ImageCropper:
             if img is None: continue
             orig_h, orig_w = img.shape[:2]
             
-            # Calculate initial scale to fit the window
-            v_scale = min(INIT_W / orig_w, INIT_H / orig_h, 1.0)
+            # Fit the image into the usable screen area, leaving room for
+            # scrollbars, the window frame, and desktop chrome.
+            screen_w, screen_h = get_available_screen_size()
+            max_view_w = max(1, screen_w - BAR_T - WINDOW_MARGIN)
+            max_view_h = max(1, screen_h - BAR_T - WINDOW_MARGIN)
+            v_scale = min(max_view_w / orig_w, max_view_h / orig_h, 1.0)
             win_w, win_h = int(orig_w * v_scale) + BAR_T, int(orig_h * v_scale) + BAR_T
             
             crops = self.all_crops.get(img_path, [])
