@@ -3,12 +3,53 @@ import json
 import os
 import argparse
 import glob
+import sys
 import numpy as np
 
 
 BAR_T = 20 # Scrollbar thickness
 WINDOW_MARGIN = 40 # Leave room for the window frame and desktop chrome
 IMG_FILE_EXTS = ['*.jpg', '*.png', '*.jpeg', '*.webp']
+
+CROP_IMAGE_TOOL = {
+    "name": "crop_image",
+    "description": (
+        "Save square crops from one image without a GUI. Coordinates are zero-based "
+        "integer pixels in the original image: x increases right, y increases down. "
+        "size is the full side length, not a radius. top_left uses position=[x1,y1]; "
+        "center uses position=[cx,cy] and top-left=(cx-size//2,cy-size//2). "
+        "Bounds are [x1,x1+size) and [y1,y1+size), clipped to the image without "
+        "padding or shifting. Empty intersections are errors. All crops are validated "
+        "before writing. Replaces this image's previous crop selections in output_dir. "
+        "Returns actual clipped coordinates and output paths. Relative paths use the current directory."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "input_path": {"type": "string", "minLength": 1, "description": "Path to one image file."},
+            "crops": {
+                "type": "array", "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "anchor": {"type": "string", "enum": ["top_left", "center"]},
+                        "position": {
+                            "type": "array", "items": {"type": "integer"},
+                            "minItems": 2, "maxItems": 2,
+                            "description": "[x1,y1] for top_left; [cx,cy] for center. Original-image pixels.",
+                        },
+                        "size": {"type": "integer", "minimum": 1, "description": "Full square side length in pixels."},
+                    },
+                    "required": ["anchor", "position", "size"],
+                    "additionalProperties": False,
+                },
+            },
+            "output_dir": {"type": "string", "minLength": 1, "default": "output_crops"},
+        },
+        "required": ["input_path", "crops"],
+        "additionalProperties": False,
+    },
+}
 
 
 def imread_unicode(path, flags=cv2.IMREAD_COLOR):
@@ -361,22 +402,112 @@ class ImageCropper:
             imwrite_unicode(out_file, img)
             print(f"Pasted crops and saved: {out_file}")
 
+def crop_image(input_path, crops, output_dir="output_crops"):
+    """Agent-callable crop function; see CROP_IMAGE_TOOL for its JSON argument schema.
+
+    Each crop requires anchor ('top_left' or 'center'), position ([x, y]), and
+    size (full square side length). For center, subtract size // 2 from each
+    coordinate. Intersect the half-open rectangle with the image; never pad or
+    shift it. Return the actual rectangles and saved paths as a JSON-ready dict.
+    """
+    input_path, output_dir = os.fspath(input_path), os.fspath(output_dir)
+    if not isinstance(input_path, str) or not input_path:
+        raise ValueError("input_path must be a nonempty image path")
+    if not isinstance(output_dir, str) or not output_dir:
+        raise ValueError("output_dir must be a nonempty directory path")
+    if not isinstance(crops, list) or not crops:
+        raise ValueError("crops must be a nonempty array")
+
+    rectangles = []
+    for index, spec in enumerate(crops):
+        prefix = f"crops[{index}]"
+        if not isinstance(spec, dict) or set(spec) != {"anchor", "position", "size"}:
+            raise ValueError(f"{prefix} must contain exactly anchor, position, and size")
+        if spec["anchor"] not in ("top_left", "center"):
+            raise ValueError(f"{prefix}.anchor must be top_left or center")
+        position, size = spec["position"], spec["size"]
+        if (not isinstance(position, list) or len(position) != 2
+                or any(type(value) is not int for value in position)):
+            raise ValueError(f"{prefix}.position must be [x, y] with two integers")
+        if type(size) is not int or size <= 0:
+            raise ValueError(f"{prefix}.size must be a positive integer (full side length)")
+        x, y = position
+        if spec["anchor"] == "center":
+            x, y = x - size // 2, y - size // 2
+        rectangles.append((x, y, size))
+
+    image = imread_unicode(input_path)
+    if image is None:
+        raise ValueError(f"Could not read input image {input_path}")
+    height, width = image.shape[:2]
+    saved_crops = []
+    base = os.path.splitext(os.path.basename(input_path))[0]
+    for index, (x, y, size) in enumerate(rectangles):
+        x1, y1 = max(0, x), max(0, y)
+        x2, y2 = min(width, x + size), min(height, y + size)
+        if x2 <= x1 or y2 <= y1:
+            raise ValueError(f"crops[{index}] does not intersect the input image")
+        saved_crops.append({'x': x1, 'y': y1, 'w': x2 - x1, 'h': y2 - y1,
+                            'id': f"{base}_{index:03d}"})
+
+    cropper = ImageCropper(input_path, output_dir=output_dir)
+    for crop in saved_crops:
+        x, y, w, h = (crop[key] for key in ('x', 'y', 'w', 'h'))
+        path = os.path.join(output_dir, f"{crop['id']}.png")
+        if not imwrite_unicode(path, image[y:y+h, x:x+w]):
+            raise OSError(f"Could not write crop image {path}")
+    cropper.all_crops[input_path] = saved_crops
+    with open(cropper.output_json, 'w', encoding='utf-8') as f:
+        json.dump(cropper.all_crops, f, indent=4, ensure_ascii=False)
+    return {
+        "input_path": input_path, "output_dir": output_dir, "metadata_path": cropper.output_json,
+        "crops": [dict(crop, path=os.path.join(output_dir, f"{crop['id']}.png"))
+                  for crop in saved_crops],
+    }
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Stamp-based Image Cropper")
     p.add_argument("-i", "--input", default="input", help="Path to image or folder")
     p.add_argument("-o", "--output", default="output_crops", help="Path to output directory")
     p.add_argument("--size", type=int, default=512, help="Fixed stamp size (default: 512x512)")
-    p.add_argument("--headless", action="store_true", help="Tile images into stamp-sized crops without opening a window")
-    p.add_argument("--paste", action="store_true", help="Paste crops back to original images")
+    p.add_argument("--headless", action="store_true", help="Run without a window; choose --request, --tile, or --paste")
+    p.add_argument("--describe-tool", action="store_true", help="Print the crop_image function schema as JSON and exit")
+    operation = p.add_mutually_exclusive_group()
+    operation.add_argument("--request", metavar="PATH", help="Read crop_image JSON arguments from a file, or - for stdin; requires --headless")
+    operation.add_argument("--tile", action="store_true", help="Automatically tile all input images; requires --headless")
+    operation.add_argument("--paste", action="store_true", help="Paste crops back to original images")
     p.add_argument("--output-final", default="output_final", help="Output directory for pasted images")
     args = p.parse_args()
-    if args.headless and not args.paste and args.size <= 0:
+    if args.describe_tool:
+        print(json.dumps(CROP_IMAGE_TOOL, indent=2))
+        sys.exit(0)
+    if (args.request is not None or args.tile) and not args.headless:
+        p.error("--request and --tile require --headless")
+    if args.headless and not (args.request is not None or args.tile or args.paste):
+        p.error("--headless requires --request PATH, --tile, or --paste")
+    if args.tile and args.size <= 0:
         p.error("--size must be greater than zero in headless mode")
+    if args.request is not None:
+        try:
+            if args.request == "-":
+                request = json.load(sys.stdin)
+            else:
+                with open(args.request, encoding='utf-8') as f:
+                    request = json.load(f)
+            if not isinstance(request, dict):
+                raise ValueError("Request must be an object with crop_image arguments")
+            result = crop_image(**request)
+        except (OSError, ValueError, TypeError) as exc:
+            print(json.dumps({"error": str(exc)}), file=sys.stderr)
+            sys.exit(2)
+        print(json.dumps(result))
+        sys.exit(0)
     
     cropper = ImageCropper(args.input, args.size, args.output)
     if args.paste:
         cropper.paste_back(args.output_final)
-    elif args.headless:
+    elif args.tile:
         cropper.run_headless()
     else:
         cropper.run()
