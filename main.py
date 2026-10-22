@@ -9,7 +9,7 @@ import numpy as np
 
 BAR_T = 20 # Scrollbar thickness
 WINDOW_MARGIN = 40 # Leave room for the window frame and desktop chrome
-IMG_FILE_EXTS = ['*.jpg', '*.png', '*.jpeg', '*.webp']
+IMG_FILE_EXTS = ['*.JPG', '*.jpg', '*.png', '*.jpeg', '*.webp']
 
 CROP_IMAGE_TOOL = {
     "name": "crop_image",
@@ -214,23 +214,38 @@ class ImageCropper:
             print("No images found.")
             return
 
-        for img_path in self.image_list:
+        win = "ImageCropper"
+        window_size = None
+        image_index = 0
+        step = 1
+        while 0 <= image_index < len(self.image_list):
+            img_path = self.image_list[image_index]
             img = imread_unicode(img_path)
-            if img is None: continue
+            if img is None:
+                image_index += step
+                continue
             orig_h, orig_w = img.shape[:2]
-            
-            # Fit the image into the usable screen area, leaving room for
-            # scrollbars, the window frame, and desktop chrome.
-            screen_w, screen_h = get_available_screen_size()
-            max_view_w = max(1, screen_w - BAR_T - WINDOW_MARGIN)
-            max_view_h = max(1, screen_h - BAR_T - WINDOW_MARGIN)
-            v_scale = min(max_view_w / orig_w, max_view_h / orig_h, 1.0)
-            win_w, win_h = int(orig_w * v_scale) + BAR_T, int(orig_h * v_scale) + BAR_T
-            
+
+            # Create the window only once so its position, size, and maximized
+            # state survive when moving to the next image.
+            if window_size is None:
+                screen_w, screen_h = get_available_screen_size()
+                max_view_w = max(1, screen_w - BAR_T - WINDOW_MARGIN)
+                max_view_h = max(1, screen_h - BAR_T - WINDOW_MARGIN)
+                initial_scale = min(max_view_w / orig_w, max_view_h / orig_h, 1.0)
+                window_size = (int(orig_w * initial_scale) + BAR_T,
+                               int(orig_h * initial_scale) + BAR_T)
+                cv2.namedWindow(win, cv2.WINDOW_NORMAL | cv2.WINDOW_FREERATIO)
+                cv2.resizeWindow(win, *window_size)
+
+            cv2.setWindowTitle(win, f"Cropper - {os.path.basename(img_path)}")
+            rect = cv2.getWindowImageRect(win)
+            ww, wh = (rect[2], rect[3]) if (rect is not None and rect[2] > BAR_T
+                                       and rect[3] > BAR_T) else window_size
+            view_w, view_h = ww - BAR_T, wh - BAR_T
+            v_scale = min(view_w / orig_w, view_h / orig_h, 1.0)
+
             crops = self.all_crops.get(img_path, [])
-            win = f"Cropper - {os.path.basename(img_path)}"
-            cv2.namedWindow(win, cv2.WINDOW_NORMAL)
-            cv2.resizeWindow(win, win_w, win_h)
             
             # Interactive state
             state = {
@@ -328,7 +343,7 @@ class ImageCropper:
                         cv2.line(disp, (mx, my-15), (mx, my+15), (0, 255, 0), 1)
 
                 # UI Overlay
-                txt = f"Zoom: {zoom:.2f}x | Click: Crop | Z: Undo | R: Reset | N: Next"
+                txt = f"Zoom: {zoom:.2f}x | Click: Crop | Z: Undo | R: Reset | B: Previous | N: Next"
                 cv2.putText(disp, txt, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
                 
                 cv2.imshow(win, disp)
@@ -340,7 +355,8 @@ class ImageCropper:
                     state['trigger'] = False
                 elif k == ord('z') and crops: crops.pop() # Undo last crop
                 elif k == ord('r'): crops = [] # Reset crops for current image
-                elif k == ord('n') or k == 13: # Save crops on move to next
+                elif k == ord('n') or k == 13 or (k == ord('b') and image_index > 0):
+                    # Save crops before moving to another image.
                     base = os.path.splitext(os.path.basename(img_path))[0]
                     for i, c in enumerate(crops):
                         cid = f"{base}_{i:03d}"
@@ -350,14 +366,19 @@ class ImageCropper:
                     # write to json after each image to ensure progress is saved
                     with open(self.output_json, 'w', encoding='utf-8') as f:
                         json.dump(self.all_crops, f, indent=4, ensure_ascii=False)
-                    cv2.destroyWindow(win)
+                    step = -1 if k == ord('b') else 1
                     break
                 elif k == 27 or k == ord('q'): # Save current state and exit
                     self.all_crops[img_path] = crops
                     with open(self.output_json, 'w', encoding='utf-8') as f:
                         json.dump(self.all_crops, f, indent=4, ensure_ascii=False)
-                    cv2.destroyAllWindows()
+                    cv2.destroyWindow(win)
                     return
+
+            image_index += step
+
+        if window_size is not None:
+            cv2.destroyWindow(win)
 
     def paste_back(self, output_final="output"):
         """

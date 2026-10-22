@@ -171,6 +171,7 @@ python main.py --headless --paste -o ./output_crops --output-final ./output_fina
 | **Scrollbars** | Drag to pan when zoomed in |
 | **`Z`** | Undo the last crop on the current image |
 | **`R`** | Reset all crops on the current image |
+| **`B`** | Save current crops and move to the previous image |
 | **`N`** or **`Enter`** | Save current crops and move to the next image |
 | **`Q`** or **`Esc`** | Save progress and exit |
 
