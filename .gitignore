@@ -5,8 +5,11 @@ __pycache__/
 
 # AI
 .gemini/
+.codex/
+.codexignore
 .geminiignore
 GEMINI.md
+AGENTS.md
 
 # test
 test_img
@@ -14,3 +17,7 @@ test_img
 
 .vscode/
 .env
+
+# test data
+*.png
+*.jpg
