@@ -17,3 +17,7 @@ test_img
 
 .vscode/
 .env
+
+# test data
+*.png
+*.jpg
