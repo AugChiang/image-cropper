@@ -132,6 +132,38 @@ class ImageCropper:
         nx2, ny2 = min(w, x1 + self.stamp_size), min(h, y1 + self.stamp_size)
         return nx1, ny1, nx2 - nx1, ny2 - ny1
 
+    def run_headless(self):
+        """Tile each image into stamp-sized crops without creating any windows."""
+        if self.stamp_size <= 0:
+            raise ValueError("Stamp size must be greater than zero.")
+        if not self.image_list:
+            print("No images found.")
+            return
+
+        for img_path in self.image_list:
+            img = imread_unicode(img_path)
+            if img is None:
+                print(f"Warning: Could not read image {img_path}")
+                continue
+
+            height, width = img.shape[:2]
+            base = os.path.splitext(os.path.basename(img_path))[0]
+            crops = []
+            for y in range(0, height, self.stamp_size):
+                for x in range(0, width, self.stamp_size):
+                    w = min(self.stamp_size, width - x)
+                    h = min(self.stamp_size, height - y)
+                    cid = f"{base}_{len(crops):03d}"
+                    crop_path = os.path.join(self.output_dir, f"{cid}.png")
+                    if not imwrite_unicode(crop_path, img[y:y+h, x:x+w]):
+                        raise OSError(f"Could not write crop image {crop_path}")
+                    crops.append({'x': x, 'y': y, 'w': w, 'h': h, 'id': cid})
+
+            self.all_crops[img_path] = crops
+            with open(self.output_json, 'w', encoding='utf-8') as f:
+                json.dump(self.all_crops, f, indent=4, ensure_ascii=False)
+            print(f"Saved {len(crops)} crops: {img_path}")
+
     def run(self):
         """
         Launch the interactive cropping interface.
@@ -334,12 +366,17 @@ if __name__ == "__main__":
     p.add_argument("-i", "--input", default="input", help="Path to image or folder")
     p.add_argument("-o", "--output", default="output_crops", help="Path to output directory")
     p.add_argument("--size", type=int, default=512, help="Fixed stamp size (default: 512x512)")
+    p.add_argument("--headless", action="store_true", help="Tile images into stamp-sized crops without opening a window")
     p.add_argument("--paste", action="store_true", help="Paste crops back to original images")
     p.add_argument("--output-final", default="output_final", help="Output directory for pasted images")
     args = p.parse_args()
+    if args.headless and not args.paste and args.size <= 0:
+        p.error("--size must be greater than zero in headless mode")
     
     cropper = ImageCropper(args.input, args.size, args.output)
     if args.paste:
         cropper.paste_back(args.output_final)
+    elif args.headless:
+        cropper.run_headless()
     else:
         cropper.run()

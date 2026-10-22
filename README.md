@@ -38,6 +38,30 @@ You can customize the behavior using command-line arguments:
 - `-i`, `--input`: Path to an image file or a directory (default: `./input`).
 - `--size`: The width and height of the crop stamp (default: `512`).
 - `-o`, `--output`: Filename for the JSON metadata (default: `./output_crops`).
+- `--headless`: Automatically tile images into crops without opening a window.
+
+### Headless Mode
+
+Run automatic batch cropping from a terminal:
+
+```bash
+python main.py --headless -i ./input --size 512 -o ./output_crops
+```
+
+Each image is tiled from left to right, then top to bottom, with no overlap.
+Tiles at the right and bottom edges are clipped to the image bounds; images
+smaller than `--size` produce one crop. The stamp size must be greater than zero.
+Crops are saved as PNG files alongside `crops.json`, using the same metadata
+format as interactive mode. Existing crop files and coordinates for the processed
+images are replaced; use a separate output directory to preserve previous work.
+
+To paste processed crops back into the originals without opening a window:
+
+```bash
+python main.py --headless --paste -o ./output_crops --output-final ./output_final
+```
+
+`--paste` performs reconstruction only and does not generate new crops.
 
 ### Controls
 
